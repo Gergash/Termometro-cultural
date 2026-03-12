@@ -1,0 +1,67 @@
+# Termómetro Cultural - Docker Compose
+# Run: docker-compose up -d
+
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: termometro-api
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql+asyncpg://termometro:termometro@db:5432/termometro_cultural
+      - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+
+  db:
+    image: postgres:16-alpine
+    container_name: termometro-db
+    environment:
+      POSTGRES_USER: termometro
+      POSTGRES_PASSWORD: termometro
+      POSTGRES_DB: termometro_cultural
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U termometro -d termometro_cultural"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: termometro-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Optional: worker for async processing (Celery)
+  # worker:
+  #   build: .
+  #   command: celery -A app.scheduler.celery_app worker -l info
+  #   environment:
+  #     - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     - db
+  #     - redis
+
+volumes:
+  postgres_data:
+  redis_data:

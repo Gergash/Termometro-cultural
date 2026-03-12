@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.storage.database import get_db
-from app.storage.models.post import Post
+from app.storage.models.posts import Post
 
 router = APIRouter()
 
@@ -17,7 +17,7 @@ async def sentiment_summary(
     db: AsyncSession = Depends(get_db),
 ):
     """Aggregate sentiment counts (positive, negative, neutral) for dashboard."""
-    q = select(Post.sentiment_label, func.count(Post.id)).where(Post.sentiment_label.isnot(None)).group_by(Post.sentiment_label)
+    q = select(Post.cached_sentiment_label, func.count(Post.id)).where(Post.cached_sentiment_label.isnot(None)).group_by(Post.cached_sentiment_label)
     if platform:
         q = q.where(Post.platform == platform)
     result = await db.execute(q)

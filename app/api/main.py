@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import posts, sentiment, health
 from app.config import get_settings
 from app.storage.database import engine, Base
-from app.storage.models import Post  # noqa: F401 - register models with Base for create_all
+from app.storage.models import *  # noqa: F401, F403 - register all models with Base for create_all
 
 
 @asynccontextmanager

@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     openai_model: str = Field(default="gpt-4o-mini", alias="OPENAI_MODEL")
 
+    grok_api_key: Optional[str] = Field(default=None, alias="GROK_API_KEY")
+    grok_model: str = Field(default="grok-2", alias="GROK_MODEL")
+
     playwright_headless: bool = Field(default=True, alias="PLAYWRIGHT_HEADLESS")
     proxy_rotation: bool = Field(default=False, alias="PROXY_ROTATION")
     proxy_list: str = Field(default="", alias="PROXY_LIST")

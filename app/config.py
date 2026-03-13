@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     scrape_interval_hours: int = Field(default=12, alias="SCRAPE_INTERVAL_HOURS")
     process_batch_size: int = Field(default=100, alias="PROCESS_BATCH_SIZE")
 
+    # Webhooks
+    webhook_secret: Optional[str] = Field(default=None, alias="WEBHOOK_SECRET")
+
     @property
     def proxy_urls(self) -> List[str]:
         if not self.proxy_list:

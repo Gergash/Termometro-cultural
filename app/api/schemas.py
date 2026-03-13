@@ -141,3 +141,110 @@ class SourceEngagement(BaseModel):
     avg_confidence: Optional[float] = None
     score: float = Field(0.0, description="Net sentiment score for this source")
     last_scraped_at: Optional[datetime] = None
+
+
+# ---------------------------------------------------------------------------
+# Webhook schemas
+# ---------------------------------------------------------------------------
+
+class TriggerScrapingRequest(BaseModel):
+    """Optional body for POST /webhooks/trigger-scraping."""
+    note: Optional[str] = Field(None, description="Optional note for audit log.")
+
+
+class TriggerScrapingResponse(BaseModel):
+    status: str = Field(..., description="queued | error")
+    task_id: Optional[str] = Field(None, description="Celery task ID for status polling.")
+    message: str
+    queued_at: datetime
+    sources_count: int = Field(0, description="Number of active sources that will be scraped.")
+
+
+class ReportRequest(BaseModel):
+    """Body for POST /webhooks/generate-report."""
+    from_date: Optional[datetime] = Field(None, description="Start of report period (ISO 8601).")
+    to_date: Optional[datetime] = Field(None, description="End of report period (ISO 8601). Defaults to now.")
+    alert_limit: int = Field(10, ge=1, le=50, description="Max critical alerts to include.")
+
+
+class FormattedBlocks(BaseModel):
+    telegram:   str = Field(..., description="Telegram-ready Markdown message.")
+    gpt_prompt: str = Field(..., description="Structured prompt for Custom GPT / Claude.")
+    plain_text: str = Field(..., description="Plain text summary for logging or simple bots.")
+
+
+class ThermometerBlock(BaseModel):
+    score:          float
+    trend:          str
+    trend_label:    str
+    label:          str
+    interpretation: str
+    top_concerns:   List[str] = []
+
+
+class SentimentBlock(BaseModel):
+    positive:     int = 0
+    neutral:      int = 0
+    negative:     int = 0
+    total:        int = 0
+    score:        float = 0.0
+    positive_pct: float = 0.0
+    neutral_pct:  float = 0.0
+    negative_pct: float = 0.0
+
+
+class IssueItem(BaseModel):
+    rank:            int
+    topic:           str
+    label:           str
+    mentions:        int
+    positive:        int = 0
+    neutral:         int = 0
+    negative:        int = 0
+    urgency_high:    int = 0
+    sentiment_score: float = 0.0
+    share_pct:       float = 0.0
+
+
+class SpikeItem(BaseModel):
+    date:               str
+    total_posts:        int
+    volume_vs_avg:      float
+    sentiment_score:    float
+    dominant_sentiment: str
+    positive:           int = 0
+    neutral:            int = 0
+    negative:           int = 0
+    reasons:            List[str] = []
+
+
+class ReportPeriod(BaseModel):
+    from_:  str = Field(..., alias="from")
+    to:     str
+    label:  str
+
+    class Config:
+        populate_by_name = True
+
+
+class ReportResponse(BaseModel):
+    """Full report returned by /webhooks/generate-report and /webhooks/weekly-thermometer."""
+    report_id:       str
+    generated_at:    datetime
+    period:          Dict[str, Any]
+    thermometer:     ThermometerBlock
+    sentiment:       SentimentBlock
+    top_issues:      List[IssueItem]
+    recent_spikes:   List[SpikeItem]
+    critical_alerts: List[AlertItem]
+    alert_count:     int
+    formatted:       FormattedBlocks
+
+
+class LatestAlertsResponse(BaseModel):
+    """Response for GET /webhooks/latest-alerts."""
+    count:      int
+    total:      int
+    fetched_at: datetime
+    alerts:     List[AlertItem]
+    formatted:  FormattedBlocks

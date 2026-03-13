@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     municipality_region: str = Field(default="Valle del Cauca", alias="MUNICIPALITY_REGION")
     timezone: str = Field(default="America/Bogota", alias="TIMEZONE")
 
+    # Scheduler
+    scrape_interval_hours: int = Field(default=12, alias="SCRAPE_INTERVAL_HOURS")
+    process_batch_size: int = Field(default=100, alias="PROCESS_BATCH_SIZE")
+
     @property
     def proxy_urls(self) -> List[str]:
         if not self.proxy_list:

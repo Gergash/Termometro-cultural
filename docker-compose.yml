@@ -51,17 +51,70 @@ services:
     volumes:
       - redis_data:/data
 
-  # Optional: worker for async processing (Celery)
-  # worker:
-  #   build: .
-  #   command: celery -A app.scheduler.celery_app worker -l info
-  #   environment:
-  #     - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
-  #     - REDIS_URL=redis://redis:6379/0
-  #   depends_on:
-  #     - db
-  #     - redis
+  # -------------------------------------------------------------------------
+  # Celery worker: processes scraping and NLP tasks
+  # Queues: scraping (Playwright), processing (LLM), default (analytics)
+  # -------------------------------------------------------------------------
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: termometro-worker
+    command: >
+      celery -A app.scheduler.celery_app worker
+        --queues=scraping,processing,default
+        --concurrency=2
+        --loglevel=info
+        --logfile=/var/log/celery/worker.log
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL=postgresql+asyncpg://termometro:termometro@db:5432/termometro_cultural
+      - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROK_API_KEY=${GROK_API_KEY:-}
+      - PLAYWRIGHT_HEADLESS=true
+      - LOG_LEVEL=INFO
+      - PROCESS_BATCH_SIZE=50
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - .:/app
+      - celery_logs:/var/log/celery
+    restart: unless-stopped
+
+  # -------------------------------------------------------------------------
+  # Celery Beat: periodic task scheduler (every 12h scrape, every 6h analytics)
+  # -------------------------------------------------------------------------
+  beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: termometro-beat
+    command: >
+      celery -A app.scheduler.celery_app beat
+        --loglevel=info
+        --logfile=/var/log/celery/beat.log
+        --scheduler celery.beat.PersistentScheduler
+        --schedule /var/lib/celery/celerybeat-schedule
+    environment:
+      - APP_ENV=production
+      - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
+      - REDIS_URL=redis://redis:6379/0
+      - LOG_LEVEL=INFO
+    depends_on:
+      - redis
+      - worker
+    volumes:
+      - celery_logs:/var/log/celery
+      - celery_schedule:/var/lib/celery
+    restart: unless-stopped
 
 volumes:
   postgres_data:
   redis_data:
+  celery_logs:
+  celery_schedule:

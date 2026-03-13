@@ -1,14 +1,15 @@
-"""Scheduled jobs: run scrapers and processing pipeline. Integrate with Celery or APScheduler."""
+"""
+Backward-compatible job wrappers.
+These thin async functions are kept for direct script use and tests.
+Production scheduling is handled by the Celery tasks in tasks.py.
+"""
 from typing import Any, Dict, List, Optional
-
-# Example: run scrapers for configured sources and then run pipeline on new items.
-# In production, use Celery beat or APScheduler to call these.
 
 
 async def run_ingestion_job(sources: Optional[List[Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
     """
-    Run ingestion for given sources (or default list).
-    Each source: {url, platform, name}. Returns list of scraped items.
+    Run ingestion for given sources directly (not via Celery).
+    Useful for one-off scripts and integration tests.
     """
     from app.ingestion.scrapers import FacebookScraper, InstagramScraper, TwitterScraper, NewsScraper
 
@@ -20,17 +21,17 @@ async def run_ingestion_job(sources: Optional[List[Dict[str, Any]]] = None) -> L
         platform = (s.get("platform") or "").lower()
         if not url:
             continue
-        if platform in ("facebook", "facebook_group"):
-            scraper = FacebookScraper()
-        elif platform == "instagram":
-            scraper = InstagramScraper()
-        elif platform == "twitter":
-            scraper = TwitterScraper()
-        elif platform == "news":
-            scraper = NewsScraper()
-        else:
+        scraper_map = {
+            "facebook":       FacebookScraper,
+            "facebook_group": FacebookScraper,
+            "instagram":      InstagramScraper,
+            "twitter":        TwitterScraper,
+            "news":           NewsScraper,
+        }
+        cls = scraper_map.get(platform)
+        if not cls:
             continue
-        items = await scraper.scrape(url=url)
+        items = await cls().scrape(url=url)
         for it in items:
             it["source"] = it.get("source") or s.get("name", "")
         all_items.extend(items)
@@ -38,6 +39,6 @@ async def run_ingestion_job(sources: Optional[List[Dict[str, Any]]] = None) -> L
 
 
 async def run_processing_job(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Run NLP pipeline on items. Returns items with sentiment and topics."""
+    """Run NLP pipeline on items directly (not via Celery)."""
     from app.processing.pipeline import run_pipeline
     return await run_pipeline(items)

@@ -1,39 +1,54 @@
-"""Sentiment classification using OpenAI (or Grok)."""
-from typing import Any, Dict
+"""
+Sentiment classification using the shared LLM client.
+Returns structured JSON with label and confidence instead of a plain string.
+Replaces the original single-provider, no-retry, no-confidence stub.
+"""
+import structlog
 
-from app.config import get_settings
+from app.processing._llm import llm_complete_json
+from app.processing.schemas import SentimentLabel
+
+logger = structlog.get_logger(__name__)
+
+_VALID = {"positive", "neutral", "negative"}
+_DEFAULT: SentimentLabel = "neutral"
+
+_SYSTEM = """You are a sentiment classifier for citizen opinions about the municipal government of Tuluá, Colombia.
+Classify the sentiment of the text toward the municipality or its public services.
+
+SENTIMENT DEFINITIONS:
+- positive : satisfaction, praise, gratitude, improvement noted, compliment
+- neutral  : informational, question, balanced or purely factual statement
+- negative : complaint, criticism, dissatisfaction, anger, demand, concern about a failure
+
+Return ONLY a JSON object — no explanation, no markdown:
+{"sentiment": "<sentiment>", "confidence": <0.0-1.0>}"""
 
 
-async def classify_sentiment(text: str) -> Dict[str, Any]:
+async def classify_sentiment(text: str) -> dict:
     """
-    Classify sentiment of text. Returns {score, label}.
-    Uses OpenAI by default; can be switched to Grok via config.
+    Classify sentiment of *text* toward the municipality.
+
+    Returns:
+        dict with keys 'score' (label), 'label' (capitalised), 'confidence'.
+        Kept backward-compatible with the old {'score', 'label'} shape used
+        by pipeline.run_pipeline().
     """
     if not text or not text.strip():
-        return {"score": "neutral", "label": "Neutral"}
-    settings = get_settings()
-    if settings.openai_api_key:
-        return await _openai_sentiment(text, settings.openai_model)
-    return {"score": "neutral", "label": "Neutral (no API key)"}
+        return {"score": "neutral", "label": "Neutral", "confidence": 0.0}
 
-
-async def _openai_sentiment(text: str, model: str) -> Dict[str, Any]:
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=get_settings().openai_api_key)
-        response = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "Clasifica el sentimiento del texto en español: positive, negative, neutral. Responde solo con una palabra."},
-                {"role": "user", "content": text[:4000]},
-            ],
-            max_tokens=10,
-        )
-        label = (response.choices[0].message.content or "neutral").strip().lower()
-        if "pos" in label:
-            return {"score": "positive", "label": "Positive"}
-        if "neg" in label:
-            return {"score": "negative", "label": "Negative"}
-        return {"score": "neutral", "label": "Neutral"}
+        data = await llm_complete_json(_SYSTEM, text, max_tokens=60)
+        if data:
+            label = str(data.get("sentiment", "")).lower().strip()
+            if label in _VALID:
+                confidence = max(0.0, min(1.0, float(data.get("confidence", 0.5))))
+                return {
+                    "score": label,
+                    "label": label.capitalize(),
+                    "confidence": confidence,
+                }
     except Exception:
-        return {"score": "neutral", "label": "Neutral (error)"}
+        logger.warning("classify_sentiment_failed", snippet=text[:80])
+
+    return {"score": "neutral", "label": "Neutral", "confidence": 0.0}

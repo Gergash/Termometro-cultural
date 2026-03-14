@@ -52,6 +52,7 @@ celery_app.conf.update(
         "app.scheduler.tasks.scrape_sources":   {"queue": "scraping"},
         "app.scheduler.tasks.process_text_data": {"queue": "processing"},
         "app.scheduler.tasks.update_analytics":  {"queue": "default"},
+        "app.scheduler.tasks.notify_n8n":        {"queue": "default"},
     },
 
     # Time limits (scraping can be slow)

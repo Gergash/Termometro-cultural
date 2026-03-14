@@ -124,7 +124,7 @@ class NewsScraper(BaseScraper):
                 await browser.close()
         return results
 
-    async def scrape(self, url: Optional[str] = None, **kwargs: Any) -> List[Dict[str, Any]]:
+    async def _scrape_impl(self, url: Optional[str] = None, **kwargs: Any) -> List[Dict[str, Any]]:
         """
         Scrape a news article or a list page (single article extraction).
         url: full article URL or section URL (one article will be extracted from section).

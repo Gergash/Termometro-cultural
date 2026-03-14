@@ -160,8 +160,8 @@ class GrokSearchScraper(BaseScraper):
             raise RuntimeError(
                 "GROK_API_KEY is not set. Cannot use GrokSearchScraper."
             )
-        # grok-4 is required for server-side tools (web_search via responses API)
-        search_model = "grok-4"
+        # grok-4-0709 is required for server-side tools (web_search via responses API)
+        search_model = "grok-4-0709"
         return AsyncOpenAI(api_key=s.grok_api_key, base_url="https://api.x.ai/v1"), search_model
 
     async def _call_grok_search(self, url: str, source_name: str) -> Optional[Dict[str, Any]]:

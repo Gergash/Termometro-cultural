@@ -1,11 +1,15 @@
 """
 Base scraper interface for the Social Sentiment Monitoring System.
 All platform scrapers must implement this interface and return normalized ScrapedItem objects.
+Includes retry on transient errors (network, timeout).
 """
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+
+from app.core.exceptions import ScraperError
 from app.ingestion.schemas import ScrapedItem
 
 
@@ -71,9 +75,22 @@ class BaseScraper(ABC):
         ]
 
     @abstractmethod
+    async def _scrape_impl(self, url: Optional[str] = None, **kwargs: Any) -> List[Dict[str, Any]]:
+        """Internal implementation. Subclasses override this."""
+        pass
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(min=2, max=30),
+        retry=retry_if_exception_type((ScraperError, ConnectionError, TimeoutError, OSError)),
+        reraise=True,
+    )
     async def scrape(self, url: Optional[str] = None, **kwargs: Any) -> List[Dict[str, Any]]:
         """
-        Perform the scrape and return a list of normalized items.
-        Each item must have: source, platform, text, date, url, metadata.
+        Perform the scrape with retry on transient errors.
+        Returns a list of normalized items (source, platform, text, date, url, metadata).
         """
-        pass
+        try:
+            return await self._scrape_impl(url, **kwargs)
+        except (ConnectionError, TimeoutError, OSError) as e:
+            raise ScraperError(str(e), details={"url": url})

@@ -53,8 +53,24 @@ class Settings(BaseSettings):
     scrape_interval_hours: int = Field(default=12, alias="SCRAPE_INTERVAL_HOURS")
     process_batch_size: int = Field(default=100, alias="PROCESS_BATCH_SIZE")
 
+    # Retry (tenacity)
+    retry_max_attempts: int = Field(default=3, alias="RETRY_MAX_ATTEMPTS")
+    retry_min_wait: float = Field(default=2.0, alias="RETRY_MIN_WAIT")
+    retry_max_wait: float = Field(default=60.0, alias="RETRY_MAX_WAIT")
+
+    # Rate limiting (per minute)
+    llm_rate_limit_rpm: int = Field(default=60, alias="LLM_RATE_LIMIT_RPM")
+    webhook_rate_limit_rpm: int = Field(default=30, alias="WEBHOOK_RATE_LIMIT_RPM")
+
     # Webhooks
     webhook_secret: Optional[str] = Field(default=None, alias="WEBHOOK_SECRET")
+
+    # Telegram notifications
+    telegram_bot_token: Optional[str] = Field(default=None, alias="TELEGRAM_BOT_TOKEN")
+    telegram_chat_id: Optional[str] = Field(default=None, alias="TELEGRAM_CHAT_ID")
+
+    # n8n webhook (push report after each scraping cycle)
+    n8n_webhook_url: Optional[str] = Field(default=None, alias="N8N_WEBHOOK_URL")
 
     @property
     def proxy_urls(self) -> List[str]:

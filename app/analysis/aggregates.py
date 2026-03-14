@@ -93,7 +93,10 @@ async def get_sentiment_summary(db: AsyncSession, filters) -> Dict[str, Any]:
     if filters.topic:
         q = q.where(Post.id.in_(_topic_post_ids(filters.topic)))
     row = (await db.execute(q)).one()
-    summary = _breakdown(int(row.positive), int(row.negative), int(row.neutral), int(row.total))
+    summary = _breakdown(
+        int(row.positive or 0), int(row.negative or 0),
+        int(row.neutral  or 0), int(row.total    or 0),
+    )
 
     q_plat = (
         select(Post.platform, pos_col, neg_col, neu_col, tot_col)
@@ -107,7 +110,8 @@ async def get_sentiment_summary(db: AsyncSession, filters) -> Dict[str, Any]:
     by_platform: Dict[str, Any] = {}
     for r in (await db.execute(q_plat)).all():
         by_platform[r.platform] = _breakdown(
-            int(r.positive), int(r.negative), int(r.neutral), int(r.total)
+            int(r.positive or 0), int(r.negative or 0),
+            int(r.neutral  or 0), int(r.total    or 0),
         )
     return {"summary": summary, "by_platform": by_platform}
 
@@ -155,11 +159,11 @@ async def get_trending_topics(
 
     topics = []
     for r in rows:
-        cnt = int(r.count)
+        cnt = int(r.count or 0)
         topics.append({
             "slug": r.slug, "name": r.name, "count": cnt,
-            "positive": int(r.positive), "neutral": int(r.neutral),
-            "negative": int(r.negative), "urgency_high": int(r.urgency_high),
+            "positive": int(r.positive or 0), "neutral": int(r.neutral or 0),
+            "negative": int(r.negative or 0), "urgency_high": int(r.urgency_high or 0),
             "share_pct": _pct(cnt, total_classified),
         })
     return {"topics": topics, "total_classified": total_classified}
@@ -245,7 +249,7 @@ async def get_timeline(db: AsyncSession, filters) -> List[Dict[str, Any]]:
     rows = (await db.execute(q)).all()
     points = []
     for r in rows:
-        pos, neg, neu, tot = int(r.positive), int(r.negative), int(r.neutral), int(r.total)
+        pos, neg, neu, tot = int(r.positive or 0), int(r.negative or 0), int(r.neutral or 0), int(r.total or 0)
         avg_conf = float(r.avg_confidence) if r.avg_confidence is not None else None
         points.append({
             "date": str(r.date), "positive": pos, "neutral": neu, "negative": neg,
@@ -290,12 +294,12 @@ async def get_source_engagement(db: AsyncSession, filters) -> Dict[str, Any]:
     rows = (await db.execute(q_base.limit(filters.page_size).offset(filters.offset))).all()
     items = []
     for r in rows:
-        p, n, u, t = int(r.positive), int(r.negative), int(r.neutral), int(r.post_count)
+        p, n, u, t = int(r.positive or 0), int(r.negative or 0), int(r.neutral or 0), int(r.post_count or 0)
         avg_conf = float(r.avg_confidence) if r.avg_confidence is not None else None
         items.append({
             "source_id": r.source_id, "name": r.name, "platform": r.platform,
             "post_count": t, "positive": p, "neutral": u, "negative": n,
-            "high_urgency": int(r.high_urgency),
+            "high_urgency": int(r.high_urgency or 0),
             "avg_confidence": round(avg_conf, 4) if avg_conf is not None else None,
             "score": _score(p, n, t),
             "last_scraped_at": r.last_scraped_at,

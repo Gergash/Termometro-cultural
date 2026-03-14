@@ -159,7 +159,7 @@ def upsert_post(source_id: int, item: Dict[str, Any]) -> Tuple[int, bool]:
         result = session.execute(
             text(
                 "INSERT INTO posts (source_id, platform, text, posted_at, url, metadata, language) "
-                "VALUES (:source_id, :platform, :text, :posted_at, :url, :metadata::jsonb, :language) "
+                "VALUES (:source_id, :platform, :text, :posted_at, :url, CAST(:metadata AS jsonb), :language) "
                 "RETURNING id"
             ),
             {

@@ -159,40 +159,47 @@ class GrokSearchScraper(BaseScraper):
 
     async def _call_grok_search(self, url: str, source_name: str) -> Optional[Dict[str, Any]]:
         """
-        Send a live-search request to Grok and parse the JSON response.
+        Send a live-search request to Grok using the xAI Agent Tools API.
 
-        Uses search_parameters.mode="on" so Grok reads current web content.
+        Uses client.responses.create() with tools=[{"type": "web_search"}].
+        This replaced the deprecated search_parameters approach (HTTP 410).
+        Requires openai >= 1.66.0.
         Returns the parsed dict or None on failure.
         """
         client, model = self._grok_client()
-        since_date = (
-            datetime.now(tz=timezone.utc) - timedelta(days=self.days_back)
-        ).strftime("%Y-%m-%d")
 
         try:
-            response = await client.chat.completions.create(
+            response = await client.responses.create(
                 model=model,
-                messages=[
+                input=[
                     {"role": "system", "content": _SYSTEM},
                     {"role": "user",   "content": _build_user_prompt(url, source_name, self.days_back)},
                 ],
-                max_tokens=4000,
-                temperature=0.1,
-                extra_body={
-                    "search_parameters": {
-                        "mode": "on",
-                        "max_search_results": self.max_results,
-                        "from_date": since_date,
-                    }
-                },
+                tools=[{"type": "web_search"}],
             )
         except Exception as exc:
             logger.error("grok_search_api_error", url=url, error=str(exc))
             return None
 
-        raw = (response.choices[0].message.content or "").strip()
+        # Extract text from the response output
+        raw = ""
+        try:
+            # response.output_text is the convenience property in openai >= 1.66
+            if hasattr(response, "output_text"):
+                raw = response.output_text or ""
+            else:
+                # Fallback: iterate output items
+                for item in (response.output or []):
+                    if hasattr(item, "content"):
+                        for block in (item.content or []):
+                            if hasattr(block, "text"):
+                                raw += block.text
+                        break
+        except Exception as exc:
+            logger.warning("grok_search_response_parse_error", url=url, error=str(exc))
+            return None
 
-        # Strip markdown fences if the model wraps output despite instructions
+        raw = raw.strip()
         if raw.startswith("```"):
             lines = raw.splitlines()
             raw = "\n".join(

@@ -74,15 +74,38 @@ Reglas:
 """
 
 
-def _build_user_prompt(url: str, source_name: str, days_back: int = 7) -> str:
-    """Build the user message for a specific source URL."""
+def _is_url(value: str) -> bool:
+    """Return True if value looks like a URL rather than a search query."""
+    return value.startswith("http://") or value.startswith("https://") or value.startswith("www.")
+
+
+def _build_user_prompt(query: str, source_name: str, days_back: int = 7) -> str:
+    """
+    Build the user message for Grok.
+
+    If `query` is a URL  → ask Grok to read that specific page.
+    If `query` is text   → ask Grok to search freely across all platforms.
+    """
     since = (datetime.now(tz=timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
-    return (
-        f"Busca y extrae publicaciones recientes desde: {url}\n"
-        f"Nombre de la fuente: {source_name}\n"
-        f"Periodo: desde {since} hasta hoy.\n"
-        f"Incluye publicaciones de ciudadanos o de la alcaldía sobre gestión municipal en Tuluá."
-    )
+
+    if _is_url(query):
+        return (
+            f"Busca y extrae publicaciones recientes desde: {query}\n"
+            f"Nombre de la fuente: {source_name}\n"
+            f"Periodo: desde {since} hasta hoy.\n"
+            f"Incluye publicaciones de ciudadanos o de la alcaldía sobre gestión municipal en Tuluá."
+        )
+    else:
+        # Free-topic search: Grok decides where to look
+        return (
+            f"Busca en internet (Facebook, Instagram, Twitter/X, noticias locales) "
+            f"publicaciones recientes sobre el siguiente tema:\n\n"
+            f"\"{query}\"\n\n"
+            f"Periodo: desde {since} hasta hoy.\n"
+            f"Municipio de interés: Tuluá, Valle del Cauca, Colombia.\n"
+            f"Busca en todas las plataformas disponibles y recopila las publicaciones "
+            f"más relevantes de ciudadanos, medios locales o la alcaldía."
+        )
 
 
 # ---------------------------------------------------------------------------

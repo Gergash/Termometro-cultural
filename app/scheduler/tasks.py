@@ -122,8 +122,9 @@ async def _scrape_one(source: Dict[str, Any]) -> List[Dict[str, Any]]:
     url = source.get("url", "")
     source_name = source.get("name", "")
 
-    # Social platforms: prefer Grok live search when API key is available
-    _social_platforms = {"facebook", "facebook_group", "instagram", "twitter"}
+    # Social platforms + free-topic searches: use Grok when API key is available
+    # platform="grok_topic" → free search query (no specific URL required)
+    _social_platforms = {"facebook", "facebook_group", "instagram", "twitter", "grok_topic"}
 
     if platform in _social_platforms and s.grok_api_key:
         scraper = GrokSearchScraper(

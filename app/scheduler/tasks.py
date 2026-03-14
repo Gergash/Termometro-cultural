@@ -102,24 +102,56 @@ def _run_async(coro):
 
 
 async def _scrape_one(source: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Run a single scraper asynchronously."""
+    """
+    Run a single scraper asynchronously.
+
+    Platform routing:
+      - news                         → NewsScraper (BeautifulSoup + Playwright)
+      - facebook / instagram /       → GrokSearchScraper when GROK_API_KEY is set
+        facebook_group / twitter       (live web search via xAI Grok API)
+                                     → Playwright scraper as fallback
+    """
     from app.ingestion.scrapers import (
         FacebookScraper, InstagramScraper, NewsScraper, TwitterScraper,
+        GrokSearchScraper,
     )
     from app.config import get_settings
 
     s = get_settings()
     platform = (source.get("platform") or "").lower()
     url = source.get("url", "")
+    source_name = source.get("name", "")
 
-    scraper_map = {
+    # Social platforms: prefer Grok live search when API key is available
+    _social_platforms = {"facebook", "facebook_group", "instagram", "twitter"}
+
+    if platform in _social_platforms and s.grok_api_key:
+        scraper = GrokSearchScraper(
+            target_platform=platform,
+            days_back=7,
+            max_results=20,
+        )
+        items = await scraper.scrape(url=url, source_name=source_name)
+        for item in items:
+            item["source"]   = item.get("source") or source_name
+            item["platform"] = platform   # keep original platform label for analytics
+        logger.info(
+            "grok_search_used",
+            platform=platform,
+            source=source_name,
+            items=len(items),
+        )
+        return items
+
+    # Fallback: Playwright scrapers (require browser automation)
+    playwright_map = {
         "facebook":       FacebookScraper,
         "facebook_group": FacebookScraper,
         "instagram":      InstagramScraper,
         "twitter":        TwitterScraper,
         "news":           NewsScraper,
     }
-    cls = scraper_map.get(platform)
+    cls = playwright_map.get(platform)
     if not cls:
         logger.warning("unknown_platform_skipped", platform=platform, url=url)
         return []
@@ -131,7 +163,7 @@ async def _scrape_one(source: Dict[str, Any]) -> List[Dict[str, Any]]:
     )
     items = await scraper.scrape(url=url)
     for item in items:
-        item["source"] = item.get("source") or source.get("name", "")
+        item["source"]   = item.get("source") or source_name
         item["platform"] = platform
     return items
 

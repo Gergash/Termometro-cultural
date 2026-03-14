@@ -146,7 +146,12 @@ class GrokSearchScraper(BaseScraper):
         self.max_results = max_results
 
     def _grok_client(self):
-        """Return (AsyncOpenAI, model_name) pointing at xAI."""
+        """
+        Return (AsyncOpenAI, model_name) pointing at xAI.
+
+        Web search via responses.create() requires the grok-4 model family.
+        This is separate from the NLP model (grok-3-latest) used for classification.
+        """
         from openai import AsyncOpenAI
         from app.config import get_settings
 
@@ -155,7 +160,9 @@ class GrokSearchScraper(BaseScraper):
             raise RuntimeError(
                 "GROK_API_KEY is not set. Cannot use GrokSearchScraper."
             )
-        return AsyncOpenAI(api_key=s.grok_api_key, base_url="https://api.x.ai/v1"), s.grok_model
+        # grok-4 is required for server-side tools (web_search via responses API)
+        search_model = "grok-4"
+        return AsyncOpenAI(api_key=s.grok_api_key, base_url="https://api.x.ai/v1"), search_model
 
     async def _call_grok_search(self, url: str, source_name: str) -> Optional[Dict[str, Any]]:
         """

@@ -127,8 +127,22 @@ def get_active_sources() -> List[Dict[str, Any]]:
 def upsert_post(source_id: int, item: Dict[str, Any]) -> Tuple[int, bool]:
     """
     Insert a post if its URL doesn't exist yet.
+    Applies Ley 1581 privacy sanitization before storage.
     Returns (post_id, is_new).
     """
+    # Privacy layer: remove PII before any data reaches the database
+    from app.processing.privacy import sanitize_record as _sanitize
+    item, privacy_report = _sanitize(item)
+    if privacy_report.has_pii:
+        logger.info(
+            "repository_pii_removed",
+            mentions=privacy_report.mentions_removed,
+            emails=privacy_report.emails_removed,
+            phones=privacy_report.phones_removed,
+            cedulas=privacy_report.cedulas_removed,
+            metadata_keys=privacy_report.metadata_keys_cleared,
+        )
+
     url = (item.get("url") or "").strip()
     if not url:
         raise ValueError("scraped item has no URL")

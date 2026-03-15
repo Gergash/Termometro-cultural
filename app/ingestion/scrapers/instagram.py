@@ -1,6 +1,14 @@
 """
 Instagram scraper: posts and captions.
 Uses Playwright for dynamic content. Extracts post text (caption), date, source, url.
+
+FALLBACK — only used when GROK_API_KEY is NOT configured.
+Primary path: GrokSearchScraper (app/ingestion/scrapers/grok_search.py) handles
+Instagram via live web search without requiring browser automation.
+
+To activate this scraper: remove GROK_API_KEY from .env and register sources
+with platform="instagram". Note that Instagram requires login for most content;
+Playwright scraping without credentials typically yields empty results.
 """
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -43,7 +51,7 @@ class InstagramScraper(BaseScraper):
             opts["proxy"] = {"server": proxy} if proxy.startswith("http") else {"server": f"http://{proxy}"}
         return opts
 
-    async def scrape(self, url: Optional[str] = None, **kwargs: Any) -> List[Dict[str, Any]]:
+    async def _scrape_impl(self, url: Optional[str] = None, **kwargs: Any) -> List[Dict[str, Any]]:
         """
         Scrape an Instagram profile or single post URL.
         url: e.g. https://www.instagram.com/username/ or https://www.instagram.com/p/CODE/

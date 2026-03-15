@@ -16,7 +16,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://termometro:termometro@db:5432/termometro_cultural
       - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
       - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GROK_API_KEY=${GROK_API_KEY}
+      - GROK_MODEL=${GROK_MODEL:-grok-3}
     depends_on:
       db:
         condition: service_healthy
@@ -24,7 +25,7 @@ services:
         condition: service_started
     volumes:
       - .:/app
-    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+    command: sh -c "alembic upgrade head && uvicorn app.api.main:app --host 0.0.0.0 --port 8000"
 
   db:
     image: postgres:16-alpine
@@ -65,14 +66,13 @@ services:
         --queues=scraping,processing,default
         --concurrency=2
         --loglevel=info
-        --logfile=/var/log/celery/worker.log
     environment:
       - APP_ENV=production
       - DATABASE_URL=postgresql+asyncpg://termometro:termometro@db:5432/termometro_cultural
       - DATABASE_URL_SYNC=postgresql://termometro:termometro@db:5432/termometro_cultural
       - REDIS_URL=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - GROK_API_KEY=${GROK_API_KEY:-}
+      - GROK_API_KEY=${GROK_API_KEY}
+      - GROK_MODEL=${GROK_MODEL:-grok-3}
       - PLAYWRIGHT_HEADLESS=true
       - LOG_LEVEL=INFO
       - PROCESS_BATCH_SIZE=50
@@ -97,7 +97,6 @@ services:
     command: >
       celery -A app.scheduler.celery_app beat
         --loglevel=info
-        --logfile=/var/log/celery/beat.log
         --scheduler celery.beat.PersistentScheduler
         --schedule /var/lib/celery/celerybeat-schedule
     environment:

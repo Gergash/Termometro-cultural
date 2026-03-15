@@ -197,14 +197,12 @@ async def generate_report(
     log = logger.bind(from_date=str(effective_from.date()), to_date=str(effective_to.date()))
     log.info("report_generation_started")
 
-    # Gather data concurrently
-    import asyncio
-    sentiment_data, topics_data, alerts_data, timeline_data = await asyncio.gather(
-        get_sentiment_summary(db, filters),
-        get_trending_topics(db, filters, limit=7),
-        get_alerts(db, filters),
-        get_timeline(db, full_filters),
-    )
+    # Sequential queries — SQLAlchemy async sessions do not support concurrent
+    # operations on the same session (InvalidRequestError on asyncio.gather).
+    sentiment_data = await get_sentiment_summary(db, filters)
+    topics_data    = await get_trending_topics(db, filters, limit=7)
+    alerts_data    = await get_alerts(db, filters)
+    timeline_data  = await get_timeline(db, full_filters)
 
     summary    = sentiment_data["summary"]
     topics     = topics_data["topics"]

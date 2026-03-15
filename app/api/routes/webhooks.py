@@ -26,7 +26,7 @@ from app.analysis.reports import (
     format_telegram,
     generate_report,
 )
-from app.api.dependencies import CommonFilters, get_db
+from app.api.dependencies import CommonFilters, get_db, require_webhook_rate_limit
 from app.api.schemas import (
     AlertItem,
     FormattedBlocks,
@@ -155,6 +155,7 @@ def _alert_formatted_blocks(alerts: list, total: int) -> FormattedBlocks:
 async def trigger_scraping(
     body: TriggerScrapingRequest = TriggerScrapingRequest(),
     _auth: None = Depends(_verify_secret),
+    _rate: None = Depends(require_webhook_rate_limit("trigger-scraping")),
 ) -> TriggerScrapingResponse:
     now = datetime.now(tz=timezone.utc)
     log = logger.bind(note=body.note)
@@ -211,6 +212,7 @@ async def trigger_scraping(
 async def generate_report_endpoint(
     body: ReportRequest = ReportRequest(),
     _auth: None = Depends(_verify_secret),
+    _rate: None = Depends(require_webhook_rate_limit("generate-report")),
     db: AsyncSession = Depends(get_db),
 ) -> ReportResponse:
     log = logger.bind(from_date=str(body.from_date), to_date=str(body.to_date))
@@ -248,6 +250,7 @@ async def latest_alerts(
     topic: Optional[str] = Query(None, description="Filter by topic slug."),
     hours: int = Query(24, ge=1, le=168, description="Lookback window in hours (default 24h)."),
     _auth: None = Depends(_verify_secret),
+    _rate: None = Depends(require_webhook_rate_limit("latest-alerts")),
     db: AsyncSession = Depends(get_db),
 ) -> LatestAlertsResponse:
     now  = datetime.now(tz=timezone.utc)
@@ -303,6 +306,7 @@ async def weekly_thermometer(
     days: int = Query(7, ge=1, le=30, description="Lookback window in days (default 7)."),
     alert_limit: int = Query(10, ge=1, le=50, description="Max critical alerts to include."),
     _auth: None = Depends(_verify_secret),
+    _rate: None = Depends(require_webhook_rate_limit("weekly-thermometer")),
     db: AsyncSession = Depends(get_db),
 ) -> ReportResponse:
     now      = datetime.now(tz=timezone.utc)

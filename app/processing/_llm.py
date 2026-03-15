@@ -1,8 +1,7 @@
 """
 Shared LLM client for the processing layer.
 Supports OpenAI and Grok (x.ai OpenAI-compatible API).
-Priority: OpenAI if key present → Grok → RuntimeError.
-All classify_* modules import from here to avoid creating a new client per call.
+Rate limiting and retry on transient errors.
 """
 import json
 from typing import Any, Dict, Optional
@@ -11,8 +10,11 @@ import structlog
 from tenacity import retry, stop_after_attempt, wait_exponential
 
 from app.config import get_settings
+from app.core.exceptions import LLMError
+from app.core.logging_config import get_logger
+from app.core.rate_limiter import check_llm_rate_limit
 
-logger = structlog.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 def _make_client():
@@ -38,7 +40,9 @@ async def llm_complete(
     max_tokens: int = 300,
     temperature: float = 0.0,
 ) -> str:
-    """Single LLM completion with automatic retry on transient errors."""
+    """Single LLM completion with rate limiting and retry on transient errors."""
+    if not check_llm_rate_limit("default"):
+        raise LLMError("Rate limit exceeded for LLM calls", details={"code": "rate_limited"})
     client, model = _make_client()
     response = await client.chat.completions.create(
         model=model,

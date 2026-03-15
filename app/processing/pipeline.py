@@ -6,6 +6,7 @@ Entry points:
   run_pipeline(items)     → List[dict]         (batch, backward-compatible)
 
 Pipeline stages per record:
+  0. sanitize_record()  – Ley 1581 privacy layer (PII removal before any storage/LLM call)
   1. clean_text()       – HTML / URL / whitespace cleanup
   2. detect_language()  – heuristic + LLM
   3. Combined LLM call  – topic + sentiment + urgency in one request (cost-efficient)
@@ -20,6 +21,7 @@ import structlog
 from app.processing._llm import llm_complete_json
 from app.processing.language import detect_language
 from app.processing.normalizer import clean_text
+from app.processing.privacy import sanitize_record
 from app.processing.schemas import (
     ProcessedRecord,
     SentimentLabel,
@@ -112,6 +114,21 @@ async def process_record(record: Dict[str, Any]) -> ProcessedRecord:
     Returns:
         ProcessedRecord with language, topic, sentiment, urgency and confidence.
     """
+    # Stage 0 — privacy (Ley 1581): remove PII before any LLM call or storage
+    record, privacy_report = sanitize_record(record)
+    if privacy_report.has_pii:
+        logger.info(
+            "privacy_pii_removed",
+            mentions=privacy_report.mentions_removed,
+            profile_urls=privacy_report.profile_urls_removed,
+            emails=privacy_report.emails_removed,
+            phones=privacy_report.phones_removed,
+            cedulas=privacy_report.cedulas_removed,
+            doc_numbers=privacy_report.doc_numbers_removed,
+            contact_refs=privacy_report.contact_refs_removed,
+            metadata_keys=privacy_report.metadata_keys_cleared,
+        )
+
     original_text: str = record.get("text") or ""
     source: str        = record.get("source") or ""
     platform           = record.get("platform")

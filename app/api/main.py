@@ -1,24 +1,46 @@
 """
 FastAPI application for Termómetro Cultural.
-Registers all routers and configures CORS, OpenAPI metadata and lifespan.
+Registers all routers, CORS, logging, rate limiting and exception handlers.
 """
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.config import get_settings
+from app.core.exceptions import TermometroError, TransientError, PermanentError
+from app.core.logging_config import configure_logging, get_logger
+from app.core.rate_limiter import init_rate_limiters
+
+# Configure logging before other imports that use structlog
+configure_logging()
 
 from app.api.routes import health, posts, sentiment, topics, alerts, timeline, sources, webhooks
-from app.config import get_settings
-from app.storage.database import engine, Base
+from app.storage.database import engine
 from app.storage.models import *  # noqa: F401, F403 — register all models with Base
+
+logger = get_logger(__name__)
+
+
+async def _exception_handler(request: Request, exc: TermometroError) -> JSONResponse:
+    status = 503 if isinstance(exc, TransientError) else 400
+    logger.warning("request_error", error=str(exc), details=exc.details, path=request.url.path)
+    return JSONResponse(
+        status_code=status,
+        content={"error": str(exc), "type": type(exc).__name__, "details": exc.details},
+    )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    settings = get_settings()
+    init_rate_limiters(llm_rpm=settings.llm_rate_limit_rpm, webhook_rpm=settings.webhook_rate_limit_rpm)
+    logger.info("app_startup", env=settings.app_env, log_level=settings.log_level)
+    # Schema is managed by Alembic migrations; run `alembic upgrade head` before starting the API
     yield
     await engine.dispose()
+    logger.info("app_shutdown")
 
 
 settings = get_settings()
@@ -49,6 +71,8 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+app.add_exception_handler(TermometroError, _exception_handler)
 
 app.add_middleware(
     CORSMiddleware,

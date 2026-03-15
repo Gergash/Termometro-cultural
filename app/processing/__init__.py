@@ -9,6 +9,8 @@ Public API:
     classify_topic(text)     → (TopicLabel, float)
     classify_sentiment(text) → dict
     classify_urgency(text)   → (UrgencyLabel, float)
+    sanitize(text)           → (str, PrivacyReport)   — Ley 1581 PII removal
+    sanitize_record(record)  → (dict, PrivacyReport)  — full record PII removal
 """
 from app.processing.pipeline import process_record, run_pipeline
 from app.processing.normalizer import clean_text, normalize_text
@@ -16,6 +18,7 @@ from app.processing.language import detect_language
 from app.processing.topics import classify_topic, extract_topics
 from app.processing.sentiment import classify_sentiment
 from app.processing.urgency import classify_urgency
+from app.processing.privacy import sanitize, sanitize_record, PrivacyReport
 from app.processing.schemas import ProcessedRecord, TopicLabel, SentimentLabel, UrgencyLabel
 
 __all__ = [
@@ -28,6 +31,9 @@ __all__ = [
     "extract_topics",
     "classify_sentiment",
     "classify_urgency",
+    "sanitize",
+    "sanitize_record",
+    "PrivacyReport",
     "ProcessedRecord",
     "TopicLabel",
     "SentimentLabel",

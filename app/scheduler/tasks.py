@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 import structlog
 from celery import shared_task
 from celery.exceptions import SoftTimeLimitExceeded
-from celery.signals import task_failure, task_postrun, task_prerun
+from celery.signals import task_failure, task_postrun, task_prerun, worker_process_init
 
 from app.scheduler.celery_app import celery_app
 from app.scheduler.repository import (
@@ -45,9 +45,10 @@ def _on_finalize(sender, **kwargs):
     """Trigger seed after all tasks are registered."""
 
 
-@celery_app.worker_ready.connect
-def _on_worker_ready(sender, **kwargs):
-    """Seed lookup tables when worker is ready."""
+# worker_ready (Celery 5.4+) not on app in 5.3; use worker_process_init for compatibility
+@worker_process_init.connect
+def _on_worker_ready(sender=None, **kwargs):
+    """Seed lookup tables when worker process is ready."""
     logger.info("worker_ready_seeding")
     try:
         seed_lookup_tables()
@@ -102,24 +103,57 @@ def _run_async(coro):
 
 
 async def _scrape_one(source: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Run a single scraper asynchronously."""
+    """
+    Run a single scraper asynchronously.
+
+    Platform routing:
+      - news                         → NewsScraper (BeautifulSoup + Playwright)
+      - facebook / instagram /       → GrokSearchScraper when GROK_API_KEY is set
+        facebook_group / twitter       (live web search via xAI Grok API)
+                                     → Playwright scraper as fallback
+    """
     from app.ingestion.scrapers import (
         FacebookScraper, InstagramScraper, NewsScraper, TwitterScraper,
+        GrokSearchScraper,
     )
     from app.config import get_settings
 
     s = get_settings()
     platform = (source.get("platform") or "").lower()
     url = source.get("url", "")
+    source_name = source.get("name", "")
 
-    scraper_map = {
+    # Social platforms + free-topic searches: use Grok when API key is available
+    # platform="grok_topic" → free search query (no specific URL required)
+    _social_platforms = {"facebook", "facebook_group", "instagram", "twitter", "grok_topic"}
+
+    if platform in _social_platforms and s.grok_api_key:
+        scraper = GrokSearchScraper(
+            target_platform=platform,
+            days_back=7,
+            max_results=20,
+        )
+        items = await scraper.scrape(url=url, source_name=source_name)
+        for item in items:
+            item["source"]   = item.get("source") or source_name
+            item["platform"] = platform   # keep original platform label for analytics
+        logger.info(
+            "grok_search_used",
+            platform=platform,
+            source=source_name,
+            items=len(items),
+        )
+        return items
+
+    # Fallback: Playwright scrapers (require browser automation)
+    playwright_map = {
         "facebook":       FacebookScraper,
         "facebook_group": FacebookScraper,
         "instagram":      InstagramScraper,
         "twitter":        TwitterScraper,
         "news":           NewsScraper,
     }
-    cls = scraper_map.get(platform)
+    cls = playwright_map.get(platform)
     if not cls:
         logger.warning("unknown_platform_skipped", platform=platform, url=url)
         return []
@@ -131,7 +165,7 @@ async def _scrape_one(source: Dict[str, Any]) -> List[Dict[str, Any]]:
     )
     items = await scraper.scrape(url=url)
     for item in items:
-        item["source"] = item.get("source") or source.get("name", "")
+        item["source"]   = item.get("source") or source_name
         item["platform"] = platform
     return items
 
@@ -393,4 +427,68 @@ def update_analytics(self) -> Dict[str, Any]:
         elapsed_s=elapsed,
     )
 
+    # Push report to n8n webhook if configured
+    notify_n8n.apply_async(queue="default", countdown=5)
+
     return {"run_id": run_id, "synced": synced, "failed": failed}
+
+
+# ---------------------------------------------------------------------------
+# Task 4: notify_n8n
+# ---------------------------------------------------------------------------
+
+@celery_app.task(
+    name="app.scheduler.tasks.notify_n8n",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=60,
+    queue="default",
+    acks_late=True,
+)
+def notify_n8n(self) -> Dict[str, Any]:
+    """
+    Generate the weekly thermometer report and POST it to the n8n webhook.
+    Only runs if N8N_WEBHOOK_URL is set in the environment.
+
+    The payload sent to n8n contains the full report dict, including:
+      - thermometer.score, trend, label
+      - sentiment summary
+      - top_issues, critical_alerts, recent_spikes
+      - formatted.telegram  (ready-to-send Telegram message)
+      - formatted.gpt_prompt (context block for Custom GPT / OpenAI node)
+      - formatted.plain_text
+    """
+    from app.config import get_settings
+    s = get_settings()
+
+    if not s.n8n_webhook_url:
+        logger.info("n8n_notify_skipped_no_url")
+        return {"status": "skipped", "reason": "N8N_WEBHOOK_URL not set"}
+
+    log = logger.bind(webhook_url=s.n8n_webhook_url[:60])
+    log.info("n8n_notify_started")
+
+    async def _generate():
+        from app.storage.database import AsyncSessionLocal
+        from app.analysis.reports import generate_report
+        async with AsyncSessionLocal() as db:
+            return await generate_report(db)
+
+    try:
+        report = _run_async(_generate())
+    except Exception as exc:
+        log.exception("n8n_report_generation_failed", error=str(exc))
+        raise self.retry(exc=exc)
+
+    try:
+        import httpx
+        resp = httpx.post(s.n8n_webhook_url, json=report, timeout=30)
+        resp.raise_for_status()
+        log.info("n8n_notified", http_status=resp.status_code, score=report["thermometer"]["score"])
+        return {"status": "sent", "http_status": resp.status_code, "score": report["thermometer"]["score"]}
+    except httpx.HTTPStatusError as exc:
+        log.error("n8n_notify_http_error", status=exc.response.status_code, body=exc.response.text[:200])
+        raise self.retry(exc=exc)
+    except Exception as exc:
+        log.error("n8n_notify_failed", error=str(exc))
+        raise self.retry(exc=exc)

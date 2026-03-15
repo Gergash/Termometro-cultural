@@ -1,5 +1,5 @@
 """Comments table: comments on posts."""
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
